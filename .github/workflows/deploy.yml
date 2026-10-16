@@ -5,7 +5,6 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
-
 concurrency:
   group: deploy-juansource
   cancel-in-progress: true
@@ -17,56 +16,85 @@ jobs:
       contents: read
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Copy project via SCP
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: 161.118.239.128
-        username: ubuntu
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        source: "docker-compose.prod.yml,backend,nginx.conf"
-        target: "/home/ubuntu/JuanSource"
+      - name: Configure SSH and Prepare Files
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          AWS_HOST_IP: ${{ secrets.AWS_HOST_IP }}
+          BACKEND_ENV: ${{ secrets.JUANSOURCE_BACKEND_ENV }}
+        run: |
+          # 1. Set up SSH directory and permissions
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
 
-    - name: Deploy via SSH
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: 161.118.239.128
-        username: ubuntu
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          set -euo pipefail
-          cd /home/ubuntu/JuanSource
+          # 2. Write private key safely (printf avoids trailing newline issues)
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
 
-          compose() {
+          # 3. Add remote server to known_hosts to prevent interactive prompt
+          ssh-keyscan -H "$AWS_HOST_IP" >> ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+          # 4. Generate backend/.env locally before copying
+          mkdir -p backend
+          printf '%s\n' "$BACKEND_ENV" > backend/.env
+
+      - name: Sync Project Files via Native rsync
+        env:
+          AWS_HOST_IP: ${{ secrets.AWS_HOST_IP }}
+        run: |
+          # Ensure target directory exists on the remote server
+          ssh -i ~/.ssh/id_rsa ubuntu@"$AWS_HOST_IP" "mkdir -p /home/ubuntu/JuanSource"
+
+          # Sync only changed files over SSH and remove stale deleted files
+          rsync -avz --delete -e "ssh -i ~/.ssh/id_rsa" \
+            docker-compose.prod.yml \
+            backend \
+            nginx.conf \
+            ubuntu@"$AWS_HOST_IP":/home/ubuntu/JuanSource/
+
+      - name: Deploy Containers via Native SSH
+        env:
+          AWS_HOST_IP: ${{ secrets.AWS_HOST_IP }}
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@"$AWS_HOST_IP" 'bash -s' << 'EOF'
+            set -euo pipefail
+
+            # Ensure first-boot Terraform user_data script has finished installing Docker
+            cloud-init status --wait >/dev/null 2>&1 || true
+
+            cd /home/ubuntu/JuanSource
+
+            # Detect modern Docker Compose plugin vs legacy standalone binary
             if docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker compose"
               LEGACY_COMPOSE=0
-              docker compose "$@"
             elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
               LEGACY_COMPOSE=1
-              docker-compose "$@"
             else
               echo "No Docker Compose command found on server" >&2
               exit 1
             fi
-          }
 
-          mkdir -p backend
-          cat > backend/.env <<'EOF'
-          ${{ secrets.JUANSOURCE_BACKEND_ENV }}
+            if [ "$LEGACY_COMPOSE" -eq 1 ]; then
+              for name in juansource-backend-prod juansource-db-prod juansource-nginx-prod; do
+                ids="$(docker ps -aq --filter "name=${name}" || true)"
+                if [ -n "${ids}" ]; then
+                  docker rm -f ${ids} >/dev/null 2>&1 || true
+                fi
+              done
+              $COMPOSE_CMD -f docker-compose.prod.yml down --remove-orphans || true
+              $COMPOSE_CMD -f docker-compose.prod.yml up -d --build
+            else
+              $COMPOSE_CMD -f docker-compose.prod.yml up -d --build --remove-orphans
+            fi
+
+            docker image prune -f
           EOF
 
-          if [ "${LEGACY_COMPOSE:-1}" -eq 1 ]; then
-            for name in juansource-backend-prod juansource-db-prod juansource-nginx-prod; do
-              ids="$(docker ps -aq --filter "name=${name}" || true)"
-              if [ -n "${ids}" ]; then
-                docker rm -f ${ids} >/dev/null 2>&1 || true
-              fi
-            done
-            compose -f docker-compose.prod.yml down --remove-orphans || true
-            compose -f docker-compose.prod.yml up -d --build
-          else
-            compose -f docker-compose.prod.yml up -d --build --remove-orphans
-          fi
-
-          docker image prune -f
+      - name: Clean up SSH Key
+        if: always()
+        run: rm -f ~/.ssh/id_rsa

@@ -1,13 +1,30 @@
-# Node
-frontend/node_modules/
-frontend/dist/
+# --- Environment & Secrets ---
+.env
+backend/.env
+frontend/.env
+*.tfstate
+*.tfstate.*
+crash.log
+*.pem
+*.key
+id_rsa*
+juansource-aws-key*
 
-# Python
-backend/venv/
+# --- Python ---
 __pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
 
-# Environment files
-*.env
+# --- Node & React ---
+node_modules/
+frontend/dist/
+frontend/node_modules/
 
-# VS Code
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
 .vscode/
+.idea/
