@@ -28,3 +28,9 @@ frontend/node_modules/
 Thumbs.db
 .vscode/
 .idea/
+
+# --- Terraform ---
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
