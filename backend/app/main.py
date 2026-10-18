@@ -16,6 +16,8 @@ def get_cors_origins() -> List[str]:
     default_origins = [
         "https://juansource.mooo.com",
         "http://juansource.mooo.com",
+        "http://juansource-aws.mooo.com",
+        "https://juansource-aws.mooo.com",
         "https://neil-023.github.io",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
