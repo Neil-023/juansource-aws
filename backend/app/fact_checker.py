@@ -118,7 +118,7 @@ def _ensure_llm() -> object:
             "No Gemini credentials found. Provide GOOGLE_API_KEY or GOOGLE_APPLICATION_CREDENTIALS "
             "before starting the backend."
         )
-    model_name = os.getenv('GEMINI_MODEL', 'gemini-2.5-flash')
+    model_name = os.getenv('GEMINI_MODEL', 'gemini-3.8-flash')
     temperature = float(os.getenv('LLM_TEMPERATURE', '0.1'))
     if ChatGoogleGenerativeAI is not None:
         _llm = ChatGoogleGenerativeAI(
