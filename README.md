@@ -15,10 +15,7 @@ Originally built on Oracle Cloud, the application infrastructure has been fully 
   <img src="images/juansource.drawio.svg" alt="JuanSource AWS Architecture" width="800">
 </div>
 
-<details>
-<summary>
-
-<b>View Text-Based Data Flow</b>
+<details><summary><b>View Text-Based Data Flow</b></summary>
 
 ```text
 [ User / Browser ]
@@ -44,7 +41,7 @@ Originally built on Oracle Cloud, the application infrastructure has been fully 
        [ Docker: PostgreSQL w/ pgvector ]
          (Semantic Cache & Prompt Rate Limiting)
 ```
-</summary>
+
 </details>
 
 🛠️ Infrastructure Stack
