@@ -16,7 +16,9 @@ Originally built on Oracle Cloud, the application infrastructure has been fully 
 </div>
 
 <details>
-<summary><b>View Text-Based Data Flow</b>
+<summary>
+
+<b>View Text-Based Data Flow</b>
 
 ```text
 [ User / Browser ]
@@ -43,6 +45,7 @@ Originally built on Oracle Cloud, the application infrastructure has been fully 
          (Semantic Cache & Prompt Rate Limiting)
 ```
 </summary>
+</details>
 
 🛠️ Infrastructure Stack
 * Compute (Backend): AWS EC2 (Ubuntu t3.micro) provisioned via Terraform.
