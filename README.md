@@ -7,264 +7,168 @@ It integrates **LangChain**, **Google Generative AI**, and **Tavily Search API**
 
 ---
 
-# Docker Setup (Frontend + Backend + PostgreSQL/pgvector)
+## 🏗️ Cloud Architecture
 
-1. Create or update `backend/.env` with your API keys.
+Originally built on Oracle Cloud, the application infrastructure has been fully migrated to **AWS EC2** and provisioned using **Terraform** (Infrastructure as Code).
 
+<div align="center">
+  <img src="images/juansource.drawio.svg" alt="JuanSource AWS Architecture" width="800">
+</div>
+
+<details>
+<summary><b>View Text-Based Data Flow</b>
+
+```text
+[ User / Browser ]
+       | (Accesses Web App & completes Turnstile challenge)
+       v
+[ GitHub Pages (React Frontend) ] 
+       | (HTTPS API Requests: /api/fact-check)
+       v
+[ AWS EC2 Instance (Ubuntu t3.micro provisioned via Terraform) ]
+       |
+       +--> [ Nginx (Reverse Proxy) ]
+              | (Proxies /api to Backend)
+              v
+       [ Docker: FastAPI (Backend) ] <----------------+
+              |                                       | (External API Integrations)
+              +--(1. Verifies Token)------------> [ Cloudflare Turnstile ]
+              |                                       |
+              +--(2. Retrieves Evidence)--------> [ Tavily Search API ]
+              |                                       |
+              +--(3. Reasons & Embeds)----------> [ Google Gemini API ]
+              |
+              v (Reads/Writes)
+       [ Docker: PostgreSQL w/ pgvector ]
+         (Semantic Cache & Prompt Rate Limiting)
 ```
+</summary>
+
+🛠️ Infrastructure Stack
+* Compute (Backend): AWS EC2 (Ubuntu t3.micro) provisioned via Terraform.
+
+* Hosting (Frontend): GitHub Pages serving a compiled React/Vite SPA.
+
+* Database: PostgreSQL with pgvector running inside Docker.
+
+* Containerization: Docker & Docker Compose handling the Nginx reverse proxy, FastAPI, and Database.
+
+* CI/CD: GitHub Actions.
+
+## 🚀 Production Deployment
+Use split deployment in production:
+
+* Frontend: GitHub Pages
+
+* Backend API + database: production server via Docker Compose on AWS EC2
+
+1. Provision Infrastructure
+Use the provided main.tf to provision the AWS EC2 instance and security groups.
+
+```bash
+terraform init
+terraform apply
+```
+
+2. Configure Backend Secrets
+Configure backend env in GitHub secret JUANSOURCE_BACKEND_ENV.
+
+* Include your GitHub Pages origin in CORS_ALLOW_ORIGINS
+
+* Keep ANON_COOKIE_SECURE=true and ANON_COOKIE_SAMESITE=none in production so prompt-guard cookies work cross-origin from GitHub Pages.
+
+3. Start Production Services on EC2
+
+```bash
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Open production endpoints:
+
+* API reverse proxy (Nginx): http://localhost:3000/api
+* Backend container (FastAPI): http://localhost:8001/docs
+* Frontend app: GitHub Pages URL
+
+## 💻 Local Development Setup
+
+To run this project locally for development or testing:
+
+1. Create or update backend/.env with your API keys.
+
+```bash
 GOOGLE_API_KEY=your_google_api_key_here
 TAVILY_API_KEY=your_tavily_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
 TURNSTILE_SECRET_KEY=your_turnstile_secret_key_here
 ANON_COOKIE_SECRET=your_random_cookie_signing_secret
 ```
-
 For frontend Turnstile widget, also set this environment variable before building frontend:
 
-```
+```bash
 VITE_TURNSTILE_SITE_KEY=your_turnstile_site_key_here
 ```
-
 2. Start all services (local/dev).
 
-```
+```bash
 docker compose up --build
 ```
-
 3. Open the apps (local/dev).
+* Frontend: http://localhost:5173
+* Backend: http://localhost:8001/docs
+* PostgreSQL: localhost:5432
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8001/docs
-- PostgreSQL: localhost:5432
+Semantic Cache (Gemini endpoint)
+The /fact-check endpoint uses PostgreSQL + pgvector semantic caching.
 
-4. Stop all services.
+* Top-1 vector match is checked before running full search + LLM.
+* Cache match rule uses minimum similarity threshold.
+* Cache rows expire using TTL.
 
-```
-docker compose down
-```
+Environment variables (configured in docker-compose.yml):
 
-## Production Docker Profile
-
-Use split deployment in production:
-
-- Frontend: GitHub Pages
-- Backend API + database: production server via Docker Compose
-
-1. Configure backend env in GitHub secret `JUANSOURCE_BACKEND_ENV`.
-
-Required note:
-
-- Include your GitHub Pages origin in `CORS_ALLOW_ORIGINS` (for example `https://juansource.mooo.com,https://your-username.github.io`).
-- Keep `ANON_COOKIE_SECURE=true` and `ANON_COOKIE_SAMESITE=none` in production so prompt-guard cookies work cross-origin from GitHub Pages.
-
-2. Start production services on the server.
-
-```
-docker compose -f docker-compose.prod.yml up -d
-```
-
-3. Open production endpoints.
-
-- API reverse proxy (Nginx): http://localhost:3000/api
-- Backend container (FastAPI): http://localhost:8001/docs
-- Frontend app: GitHub Pages URL
-
-### UptimeRobot External Heartbeat (Recommended)
-
-Use UptimeRobot to generate real external traffic and receive downtime alerts.
-
-1. Health endpoint
-
-- API health URL: `https://juansource.mooo.com/api/health`
-- Expected JSON response:
-
-```json
-{"status":"online","server":"oracle-amd-1gb"}
-```
-
-2. UptimeRobot monitor settings
-
-- Monitor type: `HTTP(s)`
-- Friendly name: `JuanSource API` (or `FoodHub API`)
-- URL: `https://juansource.mooo.com/api/health`
-- Interval: `5 minutes`
-- Alert contact: your email (enabled)
-
-3. Verify requests are reaching Nginx
-
-```bash
-sudo tail -f /var/log/nginx/access.log
-```
-
-You should see UptimeRobot requests hitting `/api/health` with status `200`.
-
-4. Stop production services.
-
-```
-docker compose -f docker-compose.prod.yml down
-```
-
-### Frontend GitHub Pages Deployment
-
-Deploy only the `frontend/` app to GitHub Pages:
-
-1. Install dependencies:
-
-```bash
-cd frontend
-npm install
-```
-
-2. Build with production API + base path:
-
-```bash
-# PowerShell example (replace values)
-$env:VITE_API_BASE="https://juansource.mooo.com/api"
-$env:VITE_BASE_PATH="/JuanSource/"
-$env:VITE_TURNSTILE_SITE_KEY="your_turnstile_site_key_here"
-npm run build
-```
-
-3. Publish:
-
-```bash
-npm run deploy
-```
-
-Notes:
-
-- Set `VITE_BASE_PATH=/` when deploying to `username.github.io` root, or `/<repo-name>/` for project pages.
-- Keep backend and PostgreSQL only on your server using `docker-compose.prod.yml`.
-- `CORS_ALLOW_ORIGINS` must include the exact GitHub Pages origin used by this frontend build.
-
-### Semantic Cache (Gemini endpoint)
-
-The `/fact-check` endpoint now uses PostgreSQL + pgvector semantic caching.
-
-- Top-1 vector match is checked before running full search + LLM.
-- Cache match rule uses minimum similarity threshold.
-- Cache rows expire using TTL.
-- `/fact-check-ollama` remains uncached by default.
-
-Environment variables (configured in `docker-compose.yml`):
-
-- `SEMANTIC_CACHE_ENABLED` (default `true`)
-- `SEMANTIC_CACHE_MIN_SIMILARITY` (default `0.87`)
-- `SEMANTIC_CACHE_TTL_SECONDS` (default `86400`)
-- `SEMANTIC_CACHE_EMBEDDING_MODEL` (default `models/text-embedding-004`)
+* SEMANTIC_CACHE_ENABLED (default true)
+* SEMANTIC_CACHE_MIN_SIMILARITY (default 0.87)
+* SEMANTIC_CACHE_TTL_SECONDS (default 86400)
+* SEMANTIC_CACHE_EMBEDDING_MODEL (default models/text-embedding-001)
 
 ### Trusted Source Allowlist
-
 Search is restricted to these sources:
 
-- verafiles.org/articles
-- gmanetwork.com/news
-- news.abs-cbn.com
-- newsinfo.inquirer.net
-- philstar.com/headlines
-- philstar.com/nation
-- bworldonline.com
+* verafiles.org/articles
+* gmanetwork.com/news
+* news.abs-cbn.com
+* newsinfo.inquirer.net
+* philstar.com/headlines
+* philstar.com/nation
+* bworldonline.com
 
 ### Prompt Guard And Human Verification
 
-- Anonymous users are identified with a signed HTTP-only cookie issued by backend.
-- Prompt usage is limited to 3 requests per day per anonymous cookie ID.
-- Daily reset follows Asia/Manila midnight.
-- Cloudflare Turnstile verification is required before each prompt is processed.
+* Anonymous users are identified with a signed HTTP-only cookie issued by backend.
+* Prompt usage is limited to 3 requests per day per anonymous cookie ID.
+* Daily reset follows Asia/Manila midnight.
+* Cloudflare Turnstile verification is required before each prompt is processed.
 
----
-# 📋 Features
-- 💬 Fact-Checking Chatbot Interface — Conversational verification of claims and headlines.
-- 🔍 Real-Time Data Retrieval — Integrates Tavily Search for fresh, source-backed results.
-- 🧩 AI-Powered Reasoning — Uses Gemini 2.5 Flash (via LangChain) for classification and explanation.
-- 🌐 Accessible Frontend — Built with React + Tailwind for clean, fast, and responsive use.
-- 🛠️ Lightweight Backend — FastAPI handles API requests and RAG pipeline efficiently.
+## 📋 Features
 
----
+* 💬 Fact-Checking Chatbot Interface — Conversational verification of claims and headlines.
+* 🔍 Real-Time Data Retrieval — Integrates Tavily Search for fresh, source-backed results.
+* 🧩 AI-Powered Reasoning — Uses Gemini (via LangChain) for classification and explanation.
+* 🌐 Accessible Frontend — Built with React + Tailwind for clean, fast, and responsive use.
+* 🛠️ Lightweight Backend — FastAPI handles API requests and RAG pipeline efficiently.
 
-## 🖥️ Backend Setup
-
-### 
-1️⃣ Navigate to the backend folder
-```
-cd backend
-```
-2️⃣ Create a virtual environment
-```
-python -m venv venv
-```
-3️⃣ Activate the virtual environment
-```
-.\venv\Scripts\Activate.ps1
-```
-4️⃣ Install dependencies
-```
-pip install fastapi uvicorn python-dotenv
-pip install langchain langchain-google-genai langchain-community
-pip install tavily-python
-```
-5️⃣ Create a .env file inside the backend folder
-```
-Create a new file named .env and add your credentials
-
-GOOGLE_API_KEY=your_google_api_key_here
-TAVILY_API_KEY=your_tavily_api_key_here
-```
-6️⃣ Run the backend server
-```
-uvicorn app.main:app --reload --port 8000
-```
-Your backend will now run on: http://127.0.0.1:8000
-
-## 💡 Frontend Setup 
-
-###
-1️⃣ Create the frontend project
-```
-npm create vite@latest frontend -- --template react
-```
-2️⃣ Go to the frontend folder
-```
-cd frontend
-```
-3️⃣ Install dependencies
-```
-npm install
-```
-4️⃣ Install TailwindCSS
-```
-npm install -D tailwindcss postcss autoprefixer
-npx tailwindcss init -p
-```
-5️⃣ Run the frontend
-```
-npm run dev
-```
-Your frontend will now be live on: http://localhost:5173
-
----
-
-# 🚀 How It Works
+## 🚀 How It Works
 1️⃣ User enters a claim or headline (e.g., “Apples are orange.”)
-
 2️⃣ juansource fetches relevant snippets from Tavily Search.
-
 3️⃣ The system analyzes the context using Gemini 2.5 Flash and LangChain.
-
 4️⃣ Returns a classification (True / False / Uncertain) with reasoning and citations.
 
----
+# 💜 Our Vision   
+To make truth accessible, inclusive, and transparent for every Filipino. In the future, juansource aims to:
 
-# 💜 Our Vision
-
-To make truth accessible, inclusive, and transparent for every Filipino.
-In the future, juansource aims to:
-
-- Support Filipino and regional languages
-- Monitor and combat misinformation trends in real-time
-- Partner with media and educational institutions to promote digital literacy
-
----
+* Support Filipino and regional languages
+* Monitor and combat misinformation trends in real-time
+* Partner with media and educational institutions to promote digital literacy
 
 ### 💻 Team AltTab
 *Built by students, for every Juan.* 💜 
@@ -274,6 +178,3 @@ In the future, juansource aims to:
 - [@Neil-023](https://github.com/Neil-023)   
 - [@A-tio](https://github.com/A-tio) 
 - [@alhtb](https://github.com/alhtb) 
-  
-
-
