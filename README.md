@@ -158,10 +158,10 @@ Search is restricted to these sources:
 * 🛠️ Lightweight Backend — FastAPI handles API requests and RAG pipeline efficiently.
 
 ## 🚀 How It Works
-1️⃣ User enters a claim or headline (e.g., “Apples are orange.”)
-2️⃣ juansource fetches relevant snippets from Tavily Search.
-3️⃣ The system analyzes the context using Gemini 2.5 Flash and LangChain.
-4️⃣ Returns a classification (True / False / Uncertain) with reasoning and citations.
+* 1️⃣ User enters a claim or headline (e.g., “Apples are orange.”)
+* 2️⃣ juansource fetches relevant snippets from Tavily Search.
+* 3️⃣ The system analyzes the context using Gemini 2.5 Flash and LangChain.
+* 4️⃣ Returns a classification (True / False / Uncertain) with reasoning and citations.
 
 # 💜 Our Vision   
 To make truth accessible, inclusive, and transparent for every Filipino. In the future, juansource aims to:
